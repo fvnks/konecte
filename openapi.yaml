@@ -1,0 +1,93 @@
+openapi: 3.0.0
+info:
+  title: WhatsApp Real Estate Bot API
+  version: '1.0.0'
+  description: |
+    API para gestionar y interactuar con el Bot de WhatsApp para Propiedades Inmobiliarias.
+    Permite controlar el estado del bot, gestionar usuarios, grupos, configuraciones y claves API.
+  contact:
+    name: Desarrollo API Bot
+    email: soporte@example.com # Reemplazar con un email real si se desea
+
+servers:
+  - url: http://localhost:3000/api # Asumiendo que la API base es /api y corre en el puerto 3000
+    description: Servidor de Desarrollo Local
+  # Puedes añadir más servidores, ej. para producción:
+  # - url: https://tuproduccion.com/api
+  #   description: Servidor de Producción
+
+components:
+  securitySchemes:
+    ApiKeyAuth: # Nombre del esquema de seguridad
+      type: apiKey
+      in: header # Dónde se envía la API key
+      name: x-api-key # Nombre de la cabecera
+      description: Clave API para autenticar las solicitudes.
+
+  schemas:
+    # Esquemas de datos comunes (ejemplos, se añadirán más según sea necesario)
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Mensaje descriptivo del error.
+      required:
+        - error
+
+    BotStatus:
+      type: object
+      properties:
+        state:
+          type: string
+          description: El estado actual de la conexión de WhatsApp.
+          enum: ['disconnected', 'connecting', 'qr-ready', 'connected', 'reconnecting_failed', 'logged_out']
+        qr:
+          type: string
+          nullable: true
+          description: El código QR en formato base64 si state es 'qr-ready'.
+        message:
+          type: string
+          nullable: true
+          description: Un mensaje descriptivo asociado al estado actual.
+      required:
+        - state
+
+security:
+  # Por defecto, la mayoría de las rutas requerirán ApiKeyAuth, a menos que se especifique lo contrario en la ruta.
+  # Si una ruta no necesita autenticación, se puede indicar con: security: []
+  - ApiKeyAuth: []
+
+paths:
+  /bot/status:
+    get:
+      tags:
+        - Bot
+      summary: Obtener estado del bot
+      description: Retorna el estado actual de la conexión del bot de WhatsApp, incluyendo si está desconectado, conectado, esperando QR, etc.
+      security:
+        - ApiKeyAuth: [] # Esta ruta requiere la API Key definida en components.securitySchemes
+      responses:
+        '200':
+          description: Estado del bot obtenido exitosamente.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    $ref: '#/components/schemas/BotStatus' # Referencia al esquema BotStatus
+        '401':
+          description: No autorizado. Se requiere API Key o la clave es inválida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error interno del servidor al intentar obtener el estado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Aquí se añadirán las definiciones para /bot/restart, /bot/logout, etc. 

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Claves API - Bot de WhatsApp para Propiedades</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .api-key {
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .copied {
+            background-color: #d4edda;
+            transition: background-color 0.5s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-lg-8 offset-lg-2">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h2 class="mb-0">Generador de Claves API</h2>
+                        <p class="mb-0">Bot de WhatsApp para Propiedades Inmobiliarias</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>Nota:</strong> Estas claves API te permiten integrar el bot con WordPress u otras plataformas.
+                        </div>
+
+                        <!-- Formulario para generar nuevas claves -->
+                        <div class="mb-4">
+                            <h4>Generar Nueva Clave API</h4>
+                            <form id="createApiKeyForm">
+                                <div class="mb-3">
+                                    <label for="description" class="form-label">Descripción</label>
+                                    <input type="text" class="form-control" id="description" name="description" placeholder="Ej. Plugin WordPress" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="expires_at" class="form-label">Fecha de expiración (opcional)</label>
+                                    <input type="date" class="form-control" id="expires_at" name="expires_at">
+                                </div>
+                                <button type="submit" class="btn btn-primary">Generar Clave API</button>
+                            </form>
+                        </div>
+
+                        <!-- Sección donde aparecerá la nueva clave generada -->
+                        <div id="newApiKeyContainer" class="mb-4 d-none">
+                            <div class="alert alert-success">
+                                <h5>¡Clave API generada con éxito!</h5>
+                                <p>Tu nueva clave API es:</p>
+                                <div class="input-group mb-3">
+                                    <input type="text" id="newApiKey" class="form-control api-key" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" onclick="copyApiKey()">Copiar</button>
+                                </div>
+                                <p class="text-danger mb-0"><strong>Importante:</strong> Guarda esta clave en un lugar seguro. No podrás verla completa nuevamente.</p>
+                            </div>
+                        </div>
+
+                        <!-- Listado de claves API existentes -->
+                        <div>
+                            <h4>Claves API Existentes</h4>
+                            <div id="apiKeysTableContainer">
+                                <table class="table table-striped" id="apiKeysTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Descripción</th>
+                                            <th>Creada</th>
+                                            <th>Expiración</th>
+                                            <th>Estado</th>
+                                            <th>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="apiKeysTableBody">
+                                        <!-- Las claves API se cargarán aquí -->
+                                    </tbody>
+                                </table>
+                                <div id="noApiKeysMessage" class="alert alert-warning d-none">
+                                    No hay claves API generadas. Crea una nueva usando el formulario de arriba.
+                                </div>
+                            </div>
+                            <div id="loadingApiKeys" class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Cargando...</span>
+                                </div>
+                                <p>Cargando claves API...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmación para eliminar -->
+    <div class="modal fade" id="deleteConfirmModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Confirmar eliminación</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>¿Estás seguro de que deseas eliminar esta clave API?</p>
+                    <p>Esta acción no se puede deshacer.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteButton">Eliminar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Variables globales
+        let deleteApiKeyId = null;
+        let deleteConfirmModal = null;
+
+        // Cuando el documento esté listo
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Inicializar el modal
+            deleteConfirmModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+            
+            // Cargar las claves API existentes
+            await loadApiKeys();
+            
+            // Manejar el formulario de creación de clave API
+            document.getElementById('createApiKeyForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await createApiKey();
+            });
+            
+            // Configurar el botón de confirmación de eliminación
+            document.getElementById('confirmDeleteButton').addEventListener('click', async () => {
+                if (deleteApiKeyId) {
+                    await deleteApiKey(deleteApiKeyId);
+                    deleteConfirmModal.hide();
+                }
+            });
+        });
+
+        // Función para cargar las claves API
+        async function loadApiKeys() {
+            try {
+                const response = await fetch('/api/api-keys');
+                const data = await response.json();
+                
+                document.getElementById('loadingApiKeys').classList.add('d-none');
+                
+                if (data.apiKeys && data.apiKeys.length > 0) {
+                    renderApiKeys(data.apiKeys);
+                    document.getElementById('apiKeysTableContainer').classList.remove('d-none');
+                    document.getElementById('noApiKeysMessage').classList.add('d-none');
+                } else {
+                    document.getElementById('apiKeysTable').classList.add('d-none');
+                    document.getElementById('noApiKeysMessage').classList.remove('d-none');
+                }
+            } catch (error) {
+                console.error('Error al cargar claves API:', error);
+                document.getElementById('loadingApiKeys').classList.add('d-none');
+                document.getElementById('apiKeysTableContainer').innerHTML = `
+                    <div class="alert alert-danger">
+                        Error al cargar las claves API. Por favor, intenta recargar la página.
+                    </div>
+                `;
+            }
+        }
+
+        // Función para renderizar las claves API en la tabla
+        function renderApiKeys(apiKeys) {
+            const tableBody = document.getElementById('apiKeysTableBody');
+            tableBody.innerHTML = '';
+            
+            apiKeys.forEach(key => {
+                const row = document.createElement('tr');
+                
+                // Formatear la fecha de creación
+                const createdDate = new Date(key.created_at);
+                const formattedCreatedDate = createdDate.toLocaleDateString() + ' ' + createdDate.toLocaleTimeString();
+                
+                // Formatear la fecha de expiración
+                let expirationText = 'No expira';
+                if (key.expires_at) {
+                    const expiresDate = new Date(key.expires_at);
+                    expirationText = expiresDate.toLocaleDateString();
+                }
+                
+                // Crear la celda para el estado con un switch
+                const statusCell = `
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" 
+                            id="status_${key.id}" ${key.is_active ? 'checked' : ''}
+                            onchange="toggleApiKeyStatus(${key.id}, this.checked)">
+                        <label class="form-check-label" for="status_${key.id}">
+                            ${key.is_active ? 'Activa' : 'Inactiva'}
+                        </label>
+                    </div>
+                `;
+                
+                // Crear celda de acciones
+                const actionsCell = `
+                    <button class="btn btn-sm btn-danger" onclick="showDeleteConfirm(${key.id})">
+                        Eliminar
+                    </button>
+                `;
+                
+                // Ocultar parte de la clave API por seguridad
+                const maskedApiKey = maskApiKey(key.api_key);
+                
+                row.innerHTML = `
+                    <td title="${maskedApiKey}">${key.description}</td>
+                    <td>${formattedCreatedDate}</td>
+                    <td>${expirationText}</td>
+                    <td>${statusCell}</td>
+                    <td>${actionsCell}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Función para ocultar parte de la clave API
+        function maskApiKey(apiKey) {
+            if (apiKey.length <= 16) return apiKey;
+            return apiKey.substring(0, 8) + '...' + apiKey.substring(apiKey.length - 8);
+        }
+
+        // Función para crear una nueva clave API
+        async function createApiKey() {
+            try {
+                const description = document.getElementById('description').value;
+                const expiresAtInput = document.getElementById('expires_at');
+                
+                const payload = {
+                    description: description
+                };
+                
+                if (expiresAtInput.value) {
+                    payload.expires_at = new Date(expiresAtInput.value).toISOString();
+                }
+                
+                const response = await fetch('/api/api-keys', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.api_key) {
+                    // Mostrar la nueva clave API
+                    document.getElementById('newApiKey').value = data.api_key;
+                    document.getElementById('newApiKeyContainer').classList.remove('d-none');
+                    
+                    // Limpiar formulario
+                    document.getElementById('createApiKeyForm').reset();
+                    
+                    // Recargar lista de claves
+                    await loadApiKeys();
+                } else {
+                    alert('Error al crear la clave API: ' + (data.error || 'Error desconocido'));
+                }
+            } catch (error) {
+                console.error('Error al crear clave API:', error);
+                alert('Error al crear la clave API. Por favor, intenta de nuevo.');
+            }
+        }
+
+        // Función para copiar la clave API al portapapeles
+        function copyApiKey() {
+            const apiKeyInput = document.getElementById('newApiKey');
+            apiKeyInput.select();
+            document.execCommand('copy');
+            
+            // Efecto visual
+            apiKeyInput.classList.add('copied');
+            setTimeout(() => {
+                apiKeyInput.classList.remove('copied');
+            }, 1000);
+        }
+
+        // Función para mostrar el modal de confirmación de eliminación
+        function showDeleteConfirm(id) {
+            deleteApiKeyId = id;
+            deleteConfirmModal.show();
+        }
+
+        // Función para eliminar una clave API
+        async function deleteApiKey(id) {
+            try {
+                const response = await fetch(`/api/api-keys/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    await loadApiKeys();
+                } else {
+                    const data = await response.json();
+                    alert('Error al eliminar la clave API: ' + (data.error || 'Error desconocido'));
+                }
+            } catch (error) {
+                console.error('Error al eliminar clave API:', error);
+                alert('Error al eliminar la clave API. Por favor, intenta de nuevo.');
+            }
+        }
+
+        // Función para cambiar el estado de una clave API
+        async function toggleApiKeyStatus(id, isActive) {
+            try {
+                const response = await fetch(`/api/api-keys/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ is_active: isActive })
+                });
+                
+                if (response.ok) {
+                    // Actualizar el texto de la etiqueta
+                    const label = document.querySelector(`label[for="status_${id}"]`);
+                    if (label) {
+                        label.textContent = isActive ? 'Activa' : 'Inactiva';
+                    }
+                } else {
+                    const data = await response.json();
+                    alert('Error al actualizar estado: ' + (data.error || 'Error desconocido'));
+                    // Revertir cambio en el switch
+                    document.getElementById(`status_${id}`).checked = !isActive;
+                }
+            } catch (error) {
+                console.error('Error al actualizar estado:', error);
+                alert('Error al actualizar estado. Por favor, intenta de nuevo.');
+                // Revertir cambio en el switch
+                document.getElementById(`status_${id}`).checked = !isActive;
+            }
+        }
+    </script>
+</body>
+</html> 
